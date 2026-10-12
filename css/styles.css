@@ -1,0 +1,1985 @@
+/* ==========================================================================
+   nikhil-verma.me — "Paper & Circles"
+   Hand-rolled. No framework, no build step.
+
+   THE MODEL: an editorial page on white. White is the field, not a fill —
+   roughly two thirds of every screen is meant to be empty. Everything that is
+   not type is a CIRCLE: large warm-sand discs that bleed off the viewport
+   edges, a concentric hairline ring around the biggest of them, and small
+   solid dots used as punctuation. That is the one memorable thing here, so it
+   is the only decorative vocabulary in the file. No panels, no shadowed tiles,
+   no gradients on type, no outlined boxes around everything.
+
+   THE COLOUR IS ORANGE, NOT PINK. This matters and it is easy to get wrong: a
+   pale tint at hue 20° reads as blush, and the whole page goes soft. Every
+   tint here sits at hue 29–30° (sand / apricot) and every accent at 18–20°
+   (orange / terracotta), so the family reads warm and dry rather than sweet.
+
+   THE TYPE CARRIES WEIGHT. Jost at 300 is lovely in a 60pt deck headline and
+   anaemic at web sizes — it is what made the first pass of this read fragile.
+   Display type is therefore 500 throughout, with tracking pulled back so the
+   caps have mass instead of drifting apart. Nothing here is 300, and nothing
+   is 700 either.
+
+   Rules of the system:
+     - TWO LAYERS. The decorative layer breaks the grid freely: discs bleed off
+       the edges and ignore the content column. The content layer does not:
+       every heading, paragraph, button, card and label shares one left edge,
+       at every width. The only content-layer element at the page edge is the
+       folio, because it is a repeated device rather than a stray heading.
+     - Every decorative shape lives in ONE pseudo-element per section, is
+       `inset: 0` (so it can never create horizontal scroll), and is
+       `pointer-events: none`.
+     - Discs are centred vertically inside their section, so `overflow: hidden`
+       can never slice one and leave a flat cut where an arc should be. Rings
+       are concentric with their disc. Nothing crosses a column of text.
+     - ORANGE IS PUNCTUATION: dots, the bullet marker, the caret, the accent
+       rule under a heading's key phrase, and two small edge blocks. NAVY is
+       rarer still: the brand full stop, the focus ring, the "now" marker, and
+       two decorative dots.
+     - No paragraph is ever set on a saturated colour. Text only ever sits on
+       white or on sand (#fce7d2), where near-black is 15.6:1.
+     - No outline/hollow type. No four-sided thin rules as a default
+       container: a card is whitespace plus one hairline at its top edge.
+
+   MEASURED CONTRAST (light theme, on #ffffff)
+     --ink   #14120f  18.7:1      --ink-2 #38322c  12.6:1
+     --ink-3 #524b45   8.6:1      --ink on --sand-1  15.6:1
+   MEASURED CONTRAST (dark theme, on #100e0d)
+     --ink   #f6f1ec  17.2:1      --ink-2 #d5cec6  12.2:1
+     --ink-3 #b3aaa1   8.4:1      --ink on --sand-1  14.6:1
+   Every text tier clears 8.4:1 in both themes. Orange is 3.45:1 on white and
+   6.7:1 on the dark paper, so it is used for MARKS and for one 3px rule —
+   never for words.
+
+   The two data-theme values are HISTORICAL NAMES ONLY: js/scripts.js and the
+   localStorage key still say "twilight" and "golden", so they stay put:
+     twilight = white paper, near-black ink        (DEFAULT — the light one)
+     golden   = near-black paper, warm off-white   (the dark inversion)
+   ========================================================================== */
+
+/* ---------- Tokens ---------------------------------------------------- */
+:root {
+    --paper: #ffffff;
+    /* the two large-shape tints — hue 30°, i.e. sand / apricot, NOT blush */
+    --sand-1: #fce7d2;
+    --sand-2: #f8d5b4;
+    /* terracotta: the mid-tone shape colour, 3.3:1 on white */
+    --terra: #d9713d;
+    /* the punctuation colour, 3.45:1 on white */
+    --orange: #f4530b;
+    /* the rarest colour on the page */
+    --navy: #180084;
+
+    --ink: #14120f;
+    --ink-2: #38322c;
+    --ink-3: #524b45;
+
+    /* hairlines. --hair is the decorative rings (a whisper); --line is
+       structural (card rules, folio); --line-strong is the three outlined
+       controls that are allowed to exist. */
+    --hair: rgba(20, 18, 15, 0.1);
+    --line: rgba(20, 18, 15, 0.16);
+    --line-strong: rgba(20, 18, 15, 0.3);
+
+    /* type — Jost is a Futura revival and matches the deck's display face.
+       500 is the working weight; see the header note. Long-form copy is the
+       deliberate exception: geometric sans at 16px in dense paragraphs is
+       tiring, so running text sits on Instrument Sans. */
+    --display: "Jost", "Futura", "Futura PT", ui-sans-serif, sans-serif;
+    --body: "Instrument Sans", ui-sans-serif, system-ui, -apple-system, sans-serif;
+
+    /* metrics */
+    --nav-h: 68px;
+    --max: 1140px;
+    --gutter: clamp(1.15rem, 5vw, 2.75rem);
+    --measure: 66ch;
+    /* One vertical rhythm token drives every section. Airiness is the point of
+       the direction and the first thing lost, so it is one number rather than
+       nine separate paddings. */
+    --air: clamp(4rem, 8vw, 7.5rem);
+    --ease: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* The dark inversion. Sand becomes a warm near-black wash rather than
+   disappearing, so the discs survive the theme change instead of the page
+   turning into a different design. */
+[data-theme="golden"] {
+    --paper: #100e0d;
+    --sand-1: #2a1d13;
+    --sand-2: #38271b;
+    --terra: #c9713e;
+    --orange: #ff6a2a;
+    --navy: #9b93ff;
+
+    --ink: #f6f1ec;
+    --ink-2: #d5cec6;
+    --ink-3: #b3aaa1;
+
+    --hair: rgba(246, 241, 236, 0.09);
+    --line: rgba(246, 241, 236, 0.16);
+    --line-strong: rgba(246, 241, 236, 0.32);
+}
+
+/* ---------- Reset ----------------------------------------------------- */
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+}
+
+* {
+    margin: 0;
+}
+
+html {
+    /* The paper lives on <html> so body::before can lay a whisper of grain
+       over it and still sit UNDER every scrap of content. */
+    background: var(--paper);
+    scroll-behavior: smooth;
+    scroll-padding-top: calc(var(--nav-h) + 20px);
+    -webkit-text-size-adjust: 100%;
+    transition: background 0.35s var(--ease);
+}
+
+body {
+    position: relative;
+    font-family: var(--body);
+    background: transparent;
+    color: var(--ink);
+    font-size: 1.02rem;
+    line-height: 1.62;
+    overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
+    transition: color 0.35s var(--ease);
+}
+
+/* A whisper of grain — 3% — so the white reads as paper rather than as an
+   empty div. Fixed, behind everything, never interactive. */
+body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    opacity: 0.03;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+img,
+svg {
+    display: block;
+    max-width: 100%;
+}
+
+a {
+    color: inherit;
+    text-decoration: none;
+}
+
+button {
+    font: inherit;
+    color: inherit;
+    background: none;
+    border: 0;
+    cursor: pointer;
+}
+
+ul {
+    list-style: none;
+    padding: 0;
+}
+
+::selection {
+    background: var(--sand-2);
+    color: var(--ink);
+}
+
+/* Navy at 15.3:1 on white and 7.4:1 on the dark paper — always plainly
+   visible, and one of the three sanctioned navy moments. */
+:focus-visible {
+    outline: 2px solid var(--navy);
+    outline-offset: 4px;
+}
+
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+/* ---------- Type ------------------------------------------------------ */
+h1,
+h2,
+h3,
+h4 {
+    font-family: var(--display);
+    font-weight: 500;
+}
+
+/* The name is the masthead: caps, but at 500 with tracking pulled back to
+   0.05em so the letters have mass and read as one solid word rather than a row
+   of drifting thin shapes. */
+h1 {
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    line-height: 1.02;
+}
+
+/* Sentence case on purpose. Every h2 here is a six-to-nine word sentence with
+   a full stop; caps at that length reads as shouting and slows people down.
+   Caps is reserved for h1 and the small labels. */
+h2 {
+    font-size: clamp(1.7rem, 3.5vw, 2.7rem);
+    line-height: 1.2;
+    letter-spacing: 0.002em;
+    max-width: 26ch;
+}
+
+h3,
+h4 {
+    font-size: 1.1rem;
+    line-height: 1.38;
+    letter-spacing: 0.004em;
+}
+
+h4 {
+    font-size: 1.02rem;
+}
+
+/* The class name is inherited from an older direction; there is no gradient
+   here, and — after one look at it — no soft lozenge behind the words either.
+   A pale ellipse hugging a phrase reads as a highlighter smear, not as a
+   circle, so the accent is now a SOLID ORANGE RULE under the key phrase. The
+   glyphs stay solid ink at 18.7:1, so the accented words are the most legible
+   thing on the line rather than the least. box-decoration-break keeps the rule
+   intact when a phrase wraps across two lines, which several of them do.
+   404.html reuses this inside a bare .h-xl, which the .h-xl rule below
+   thickens to match the display size. */
+.grad-text {
+    color: inherit;
+    background-image: linear-gradient(var(--orange), var(--orange));
+    background-repeat: no-repeat;
+    background-size: 100% 3px;
+    background-position: 0 calc(100% - 0.02em);
+    -webkit-box-decoration-break: clone;
+    box-decoration-break: clone;
+}
+
+/* The small end of the scale — short labels only, never a sentence. */
+.mono {
+    font-family: var(--display);
+    font-weight: 500;
+    font-size: 0.7rem;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    line-height: 1.6;
+}
+
+/* ---------- Layout ---------------------------------------------------- */
+.wrap {
+    width: 100%;
+    max-width: var(--max);
+    margin-inline: auto;
+    padding-inline: var(--gutter);
+}
+
+/* One rhythm token, one padding, every section. No coloured stripe and no
+   border: the boundary between two sections is 7.5rem of paper, which is what
+   makes the page feel unhurried.
+   overflow: hidden is a belt-and-braces guard so nothing in the decorative
+   layer can ever produce a horizontal scrollbar. */
+main {
+    counter-reset: sec;
+}
+
+section[id] {
+    position: relative;
+    overflow: hidden;
+    counter-increment: sec;
+    padding-block: var(--air);
+}
+
+/* THE DECORATIVE LAYER, in one place.
+   Every section gets the same two shapes — a filled sand disc and a concentric
+   hairline ring around the same centre — drawn as radial-gradients on ONE
+   pseudo-element. Because it is `inset: 0` it is mathematically incapable of
+   widening the page: the shapes "bleed off the edge" by being clipped at it,
+   which is exactly what the reference does.
+
+   The geometry is three custom properties, not eight hand-written gradient
+   stacks. That is what makes the narrow-screen override at the bottom of this
+   block possible: at 390px a 330px disc centred 90px off the edge swallows the
+   whole text column, so the phone gets the same composition with the radii cut
+   to a sliver instead of a different design.
+
+     --disc-x  the shared centre, normally outside the viewport
+     --disc-r  the filled disc's radius
+     --ring-r  the hairline ring's radius; set it to 2px to omit the ring
+               (the centre is off-screen, so a 2px ring is simply not there)
+     --disc-f  the fill */
+section[id]::before,
+.hero::before {
+    --disc-x: calc(100% + 60px);
+    --disc-r: 260px;
+    --ring-r: 2px;
+    --disc-f: var(--sand-1);
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background-repeat: no-repeat;
+    background-image:
+        /* the concentric hairline ring */
+        radial-gradient(
+            circle var(--ring-r) at var(--disc-x) 50%,
+            transparent calc(var(--ring-r) - 1px),
+            var(--hair) calc(var(--ring-r) - 1px),
+            var(--hair) var(--ring-r),
+            transparent var(--ring-r)
+        ),
+        /* the disc */ radial-gradient(circle var(--disc-r) at var(--disc-x) 50%, var(--disc-f) var(--disc-r), transparent var(--disc-r));
+}
+
+/* Content sits above the shapes. */
+section[id] > .wrap {
+    position: relative;
+    z-index: 1;
+}
+
+.sec-head {
+    margin-bottom: clamp(2.5rem, 4.4vw, 3.75rem);
+}
+
+/* A small solid orange dot, then the label. The deck's punctuation mark,
+   reused as the one thing that opens every section. It replaces the old 32px
+   rule, so there is no free-floating dash anywhere on the page. */
+.eyebrow {
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+    color: var(--ink-3);
+    margin-bottom: 1.35rem;
+}
+
+.eyebrow::before {
+    content: "";
+    flex: 0 0 auto;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--orange);
+}
+
+.sec-sub {
+    color: var(--ink-2);
+    max-width: 62ch;
+    margin-top: 1.3rem;
+    font-size: 1.05rem;
+}
+
+/* The free-standing <hr>s between sections have nothing to do — the air does
+   the dividing, and a rule floating in the middle of it would be the classic
+   orphaned divider. */
+.rule {
+    display: none;
+}
+
+/* ---------- Folio ----------------------------------------------------- */
+/* The deck's page furniture: a small number sitting on top of a short vertical
+   hairline, locked to the page edge. It only exists where there is real margin
+   outside the content column to put it in — below 1180px it would crowd the
+   text, so it simply is not there. The 1px line is drawn as the
+   pseudo-element's own background, so the whole device is one element. */
+@media (min-width: 1180px) {
+    section[id]::after {
+        content: counter(sec, decimal-leading-zero);
+        position: absolute;
+        top: calc(var(--air) + 0.15rem);
+        right: calc(50% - var(--max) / 2 + var(--gutter) * 0.34);
+        width: 0.9em;
+        padding-bottom: 124px;
+        writing-mode: vertical-rl;
+        font-family: var(--display);
+        font-weight: 500;
+        font-size: 0.62rem;
+        letter-spacing: 0.3em;
+        color: var(--ink-3);
+        background: linear-gradient(var(--line), var(--line)) no-repeat right bottom / 1px 104px;
+        pointer-events: none;
+    }
+}
+
+/* ---------- Scroll progress ------------------------------------------ */
+#progress {
+    position: fixed;
+    inset: 0 auto auto 0;
+    height: 2px;
+    width: 100%;
+    transform: scaleX(0);
+    transform-origin: 0 50%;
+    background: var(--orange);
+    z-index: 90;
+    will-change: transform;
+}
+
+/* ---------- Nav ------------------------------------------------------- */
+.nav {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: var(--nav-h);
+    z-index: 80;
+    display: flex;
+    align-items: center;
+    border-bottom: 1px solid transparent;
+    transition: background 0.25s var(--ease), border-color 0.25s var(--ease);
+}
+
+.nav.is-stuck {
+    background: var(--paper);
+    border-bottom-color: var(--line);
+}
+
+.nav .wrap {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+}
+
+.brand {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    font-family: var(--display);
+    font-weight: 500;
+    font-size: 0.9rem;
+    text-transform: uppercase;
+    letter-spacing: 0.16em;
+    margin-right: auto;
+}
+
+/* circle-masked imagery, straight from the deck */
+.brand img {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    object-fit: cover;
+}
+
+/* the tiny navy full stop */
+.brand .dot {
+    color: var(--navy);
+}
+
+.nav-links {
+    display: flex;
+    align-items: center;
+    gap: 0;
+}
+
+/* Seven links plus a brand, a CTA and a toggle is the tightest row on the
+   page; the size, tracking and padding here are measured to fit at 901px, the
+   first width where the mobile sheet closes. */
+.nav-links a {
+    position: relative;
+    display: block;
+    padding: 0.45rem 0.55rem 0.62rem;
+    font-family: var(--display);
+    font-weight: 500;
+    font-size: 0.7rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    transition: color 0.18s;
+}
+
+.nav-links a:hover {
+    color: var(--ink);
+}
+
+/* No solid chip. The active item is marked by the same orange dot that opens
+   every section — one marker family, used everywhere. */
+.nav-links a.active {
+    color: var(--ink);
+}
+
+.nav-links a.active::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    bottom: 0.05rem;
+    translate: -50% 0;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--orange);
+}
+
+/* One of exactly three outlined controls on the page. */
+.nav-cta {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.48rem 0.9rem;
+    font-family: var(--display);
+    font-weight: 500;
+    font-size: 0.7rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    border: 1px solid var(--line-strong);
+    border-radius: 999px;
+    transition: background 0.18s, color 0.18s, border-color 0.18s;
+}
+
+.nav-cta:hover {
+    background: var(--ink);
+    border-color: var(--ink);
+    color: var(--paper);
+}
+
+.toggle {
+    width: 34px;
+    height: 34px;
+    display: grid;
+    place-items: center;
+    flex: 0 0 auto;
+    border: 1px solid var(--line-strong);
+    border-radius: 50%;
+    transition: background 0.18s, border-color 0.18s;
+}
+
+.toggle:hover {
+    background: var(--ink);
+    border-color: var(--ink);
+}
+
+.toggle:hover svg {
+    stroke: var(--paper);
+}
+
+.toggle svg {
+    width: 15px;
+    height: 15px;
+    stroke: var(--ink);
+    fill: none;
+    stroke-width: 2;
+    stroke-linecap: round;
+    transition: stroke 0.18s;
+}
+
+.toggle .i-sun {
+    display: none;
+}
+
+[data-theme="golden"] .toggle .i-sun {
+    display: block;
+}
+
+[data-theme="golden"] .toggle .i-moon {
+    display: none;
+}
+
+/* burger + mobile sheet */
+/* place-CONTENT, not place-items, and a gap rather than a margin. This looks
+   pedantic and is not: with `place-items: center` the three auto rows STRETCH
+   to fill the 34px button, which put the bars 11.15px apart instead of 5px, so
+   the open state rotated them into a chevron rather than closing them into an X.
+   (Measured — it was doing this in the previous theme too.) `place-content:
+   center` keeps the rows at their content size, and the 3.5px gap plus the
+   1.5px bars puts the bar centres exactly 5px apart, which is the number the
+   ±5px translateY below is built on. */
+.burger {
+    display: none;
+    width: 34px;
+    height: 34px;
+    border: 1px solid var(--line-strong);
+    border-radius: 50%;
+    place-content: center;
+    gap: 3.5px;
+}
+
+.burger span {
+    display: block;
+    width: 14px;
+    height: 1.5px;
+    background: var(--ink);
+    transition: transform 0.22s var(--ease), opacity 0.15s;
+}
+
+.nav.open .burger span:nth-child(1) {
+    transform: translateY(5px) rotate(45deg);
+}
+
+.nav.open .burger span:nth-child(2) {
+    opacity: 0;
+}
+
+.nav.open .burger span:nth-child(3) {
+    transform: translateY(-5px) rotate(-45deg);
+}
+
+@media (max-width: 900px) {
+    .burger {
+        display: grid;
+    }
+
+    .nav-links {
+        position: fixed;
+        top: var(--nav-h);
+        left: 0;
+        right: 0;
+        flex-direction: column;
+        align-items: stretch;
+        padding: 0.4rem var(--gutter) 1.25rem;
+        background: var(--paper);
+        border-bottom: 1px solid var(--line);
+        box-shadow: 0 24px 48px -34px rgba(20, 18, 15, 0.4);
+        opacity: 0;
+        visibility: hidden;
+        transform: translateY(-10px);
+        transition: opacity 0.22s, transform 0.22s var(--ease), visibility 0.22s;
+    }
+
+    .nav.open .nav-links {
+        opacity: 1;
+        visibility: visible;
+        transform: none;
+    }
+
+    .nav-links a {
+        padding: 0.85rem 0.2rem;
+        border-bottom: 1px solid var(--line);
+        font-size: 0.82rem;
+        letter-spacing: 0.18em;
+    }
+
+    .nav-links a.active::after {
+        left: auto;
+        right: 0.2rem;
+        bottom: auto;
+        top: 50%;
+        translate: 0 -50%;
+    }
+
+    .nav-cta {
+        display: none;
+    }
+}
+
+/* ---------- Hero ------------------------------------------------------ */
+/* Content is vertically centred inside a tall-but-capped hero so the name has
+   air above and below it rather than a slab of dead space on one side. The
+   min-height is a floor, not a cage: if the copy is taller, the hero grows. */
+.hero {
+    position: relative;
+    display: flex;
+    align-items: center;
+    min-height: min(100svh, 700px);
+    padding-top: calc(var(--nav-h) + clamp(1.5rem, 4vw, 3.25rem));
+    padding-bottom: clamp(2.5rem, 5vw, 4.5rem);
+    overflow: hidden;
+    isolation: isolate;
+}
+
+/* Markup for these three went with the direction that needed them. */
+.field,
+.glyphs,
+.grain {
+    display: none;
+}
+
+/* HERO DECORATIVE LAYER — the page's signature, and the whole reason this
+   direction exists. It is the one place the disc's centre sits INSIDE the
+   viewport, so the biggest circle on the site is a genuine circle rather than a
+   segment: it clears the 60ch measure by ~200px at 1440 and gets pulled out to
+   the margin on narrow screens by the override at the bottom of the file.
+   The concentric ring matters. Two circles struck from one centre read as drawn
+   geometry; the first pass scattered five unrelated arcs across the layout and
+   they read as stray pen marks. */
+.hero::before {
+    --disc-x: calc(100% - 30px);
+    --disc-r: 270px;
+    /* The hero is 700–729px tall at every width above the phone breakpoint, so
+       the ring has to stay under 350px or it stops dead at the section boundary
+       and reads as a stray pen stroke. It was 430px and it did exactly that. */
+    --ring-r: 345px;
+    animation: shape-in 1.4s var(--ease) both;
+}
+
+/* the two dots — a separate layer so they sit ABOVE the discs */
+.hero-inner::before {
+    content: "";
+    position: absolute;
+    z-index: -1;
+    inset: 0;
+    pointer-events: none;
+    background-repeat: no-repeat;
+    background-image: radial-gradient(circle 5px at calc(100% - 74px) 22%, var(--orange) 5px, transparent 5px),
+        radial-gradient(circle 4px at 0.5% 86%, var(--navy) 4px, transparent 4px);
+    animation: shape-in 1.4s var(--ease) 0.3s both;
+}
+
+.hero-inner {
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    isolation: isolate;
+}
+
+/* PAGE LOAD. One orchestrated entrance, staggered with animation-delay, and
+   nothing else competes with it. `both` holds the pre-state so nothing flashes
+   before its turn. */
+@keyframes rise {
+    from {
+        opacity: 0;
+        transform: translateY(16px);
+    }
+}
+
+@keyframes shape-in {
+    from {
+        opacity: 0;
+        transform: scale(0.94);
+    }
+}
+
+.hero-inner > * {
+    animation: rise 0.8s var(--ease) both;
+}
+
+.hero-inner > *:nth-child(1) {
+    animation-delay: 0.05s;
+}
+.hero-inner > *:nth-child(2) {
+    animation-delay: 0.13s;
+}
+.hero-inner > *:nth-child(3) {
+    animation-delay: 0.21s;
+}
+.hero-inner > *:nth-child(4) {
+    animation-delay: 0.29s;
+}
+.hero-inner > *:nth-child(5) {
+    animation-delay: 0.37s;
+}
+.hero-inner > *:nth-child(6) {
+    animation-delay: 0.45s;
+}
+.hero-inner > *:nth-child(7) {
+    animation-delay: 0.53s;
+}
+
+.hero-inner > .mono:first-child {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    color: var(--ink-3);
+    margin-bottom: 1.4rem;
+}
+
+.wave {
+    display: inline-block;
+    font-size: 0.95rem;
+    transform-origin: 70% 80%;
+    animation: wave 2.6s ease-in-out infinite;
+}
+
+@keyframes wave {
+    0%,
+    60%,
+    100% {
+        rotate: 0deg;
+    }
+    12% {
+        rotate: 16deg;
+    }
+    24% {
+        rotate: -10deg;
+    }
+    36% {
+        rotate: 14deg;
+    }
+}
+
+/* THE NAME. Jost 500 caps, tracking pulled in, solid ink, on the same left
+   edge as every other element on the page. It wraps rather than shrinking to
+   fit, which is why there is no nowrap and no viewport-fill formula here: at
+   390px it sets on one line and stays inside the gutter. */
+.h-xl {
+    font-size: clamp(2.5rem, 7.6vw, 5.4rem);
+    letter-spacing: 0.045em;
+    line-height: 1.04;
+    color: var(--ink);
+}
+
+/* The accent rule scales with the type instead of staying a hairline under a
+   90px word. */
+.h-xl .grad-text {
+    background-size: 100% 6px;
+    background-position: 0 calc(100% - 0.06em);
+}
+
+/* Sentence case: the phrases JS types in here run to eight words. The box
+   reserves its height up front so a rewrap mid-type never shifts the page. */
+.rotator {
+    font-family: var(--display);
+    font-weight: 500;
+    font-size: clamp(1rem, 1.5vw, 1.2rem);
+    letter-spacing: 0.015em;
+    color: var(--ink-2);
+    margin-top: 1.7rem;
+    line-height: 1.5;
+    min-height: 1.5em;
+}
+
+@media (max-width: 470px) {
+    .rotator {
+        min-height: 3em;
+    }
+}
+
+.rotator .lead-in {
+    color: var(--ink-3);
+}
+
+.rotator b {
+    font-weight: 600;
+    color: var(--ink);
+}
+
+.caret {
+    display: inline-block;
+    width: 2px;
+    height: 1.05em;
+    translate: 0 3px;
+    background: var(--orange);
+    animation: blink 1.1s steps(2) infinite;
+}
+
+@keyframes blink {
+    50% {
+        opacity: 0;
+    }
+}
+
+.hero-bio {
+    color: var(--ink-2);
+    max-width: 60ch;
+    margin-top: 1.45rem;
+    font-size: 1.05rem;
+    line-height: 1.68;
+}
+
+.hero-bio strong {
+    color: var(--ink);
+    font-weight: 600;
+}
+
+/* tracked caps over one hairline — no box per chip */
+.chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem 1.6rem;
+    margin-top: 1.9rem;
+    padding-top: 1.3rem;
+    border-top: 1px solid var(--line);
+}
+
+.chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-family: var(--display);
+    font-weight: 500;
+    font-size: 0.7rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+}
+
+/* Orange is 3.45:1 on white — under the 4.5:1 text bar but over the 3:1
+   non-text bar, so it is the glyph here and never the words. */
+.chip i {
+    color: var(--orange);
+    font-size: 0.95em;
+}
+
+/* A solid dot that blinks by SIZE, not opacity: the fill is full-strength
+   orange at every frame, so a screenshot can never catch it as a 1.2:1 ghost.
+   8px is the shared marker size used by the eyebrow and the bullets. */
+.pulse {
+    width: 8px;
+    height: 8px;
+    flex: 0 0 auto;
+    border-radius: 50%;
+    background: var(--orange);
+    animation: pulse 1.9s steps(1, end) infinite;
+}
+
+@keyframes pulse {
+    0%,
+    55% {
+        transform: scale(1);
+    }
+    56%,
+    100% {
+        transform: scale(0.55);
+    }
+}
+
+.hero-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.7rem;
+    margin-top: 2.1rem;
+}
+
+/* Buttons — one solid, one hairline. Pills, because the page is circular. The
+   solid one is INK, not a saturated colour: white on #14120f is 18.7:1,
+   whereas white on orange would be 3.45:1 and vibrate. */
+.btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.55rem;
+    padding: 0.82rem 1.45rem;
+    font-family: var(--display);
+    font-weight: 500;
+    font-size: 0.75rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    border: 1px solid transparent;
+    border-radius: 999px;
+    transition: background 0.18s, color 0.18s, border-color 0.18s, transform 0.18s var(--ease);
+}
+
+.btn-sun {
+    background: var(--ink);
+    color: var(--paper);
+}
+
+.btn-sun:hover {
+    background: var(--navy);
+    color: #fff;
+}
+
+.btn-ghost {
+    color: var(--ink);
+    border-color: var(--line-strong);
+}
+
+.btn-ghost:hover {
+    background: var(--sand-1);
+    border-color: var(--sand-1);
+    color: var(--ink);
+}
+
+.socials {
+    display: flex;
+    gap: 0.45rem;
+}
+
+.socials a {
+    width: 40px;
+    height: 40px;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    border: 1px solid var(--line);
+    color: var(--ink-2);
+    font-size: 0.92rem;
+    transition: background 0.18s, color 0.18s, border-color 0.18s;
+}
+
+.socials a:hover {
+    background: var(--ink);
+    border-color: var(--ink);
+    color: var(--paper);
+}
+
+.scroll-hint {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin-top: 2.2rem;
+    color: var(--ink-3);
+}
+
+.scroll-hint i {
+    animation: bob 2s ease-in-out infinite;
+}
+
+@keyframes bob {
+    50% {
+        transform: translateY(5px);
+    }
+}
+
+/* ---------- Stats ----------------------------------------------------- */
+/* No band, no boxes, no grid lines: six numerals with a great deal of air
+   between them, each opened by the orange dot. 250px minimum lands on
+   3 / 2 / 1 columns, which divides six evenly at every breakpoint. */
+.stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr));
+    gap: clamp(2.4rem, 4.4vw, 3.6rem) clamp(1.75rem, 3.4vw, 3.5rem);
+}
+
+.stat {
+    position: relative;
+    padding-top: 1.6rem;
+}
+
+.stat::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--orange);
+}
+
+.stat b {
+    display: block;
+    font-family: var(--display);
+    font-size: clamp(2.9rem, 6.4vw, 4.3rem);
+    font-weight: 500;
+    letter-spacing: -0.005em;
+    line-height: 0.94;
+    color: var(--ink);
+    font-variant-numeric: lining-nums;
+}
+
+.stat span {
+    display: block;
+    max-width: 30ch;
+    color: var(--ink-2);
+    font-size: 0.97rem;
+    line-height: 1.5;
+    margin-top: 0.9rem;
+}
+
+/* ---------- Cards / panels ------------------------------------------- */
+/* A card is whitespace plus ONE hairline at its top edge. No four-sided
+   outline, no fill, no shadow. The hairline warms to orange on hover, which is
+   the only state change a card has. */
+.card {
+    position: relative;
+    border-top: 1px solid var(--line);
+    padding-top: clamp(1.35rem, 2.2vw, 1.85rem);
+    transition: border-color 0.25s var(--ease), transform 0.25s var(--ease);
+}
+
+.card:hover {
+    border-top-color: var(--orange);
+}
+
+/* ---------- Experience timeline -------------------------------------- */
+.timeline {
+    display: grid;
+    gap: clamp(2.6rem, 4.6vw, 4rem);
+}
+
+.timeline::before,
+.job::before {
+    content: none;
+}
+
+/* The tiny navy dot as a marker: it sits ON the current role's hairline.
+   Third and last navy moment on the page. */
+.job.now::after {
+    content: "";
+    position: absolute;
+    top: -4px;
+    left: 0;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--navy);
+}
+
+.job-top {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.35rem 1.3rem;
+}
+
+.job-top h3 {
+    margin-right: auto;
+    font-size: 1.16rem;
+}
+
+.at {
+    color: var(--ink-3);
+    font-weight: 500;
+}
+
+.when {
+    font-family: var(--display);
+    font-weight: 500;
+    font-size: 0.7rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    white-space: nowrap;
+}
+
+.where {
+    color: var(--ink-3);
+    font-size: 0.92rem;
+    margin: 0.6rem 0 1.6rem;
+    padding-bottom: 1.1rem;
+    border-bottom: 1px solid var(--line);
+}
+
+/* The acceptance test for this whole page is whether anyone would read all six
+   of these, so: a full reading size, 1.7 leading, a 66ch measure, and 1.4rem
+   of air between items. Nothing decorative goes near them. */
+.bullets {
+    display: grid;
+    gap: 1.4rem;
+    max-width: var(--measure);
+}
+
+.bullets li {
+    position: relative;
+    padding-left: 1.7rem;
+    color: var(--ink-2);
+    font-size: 1.02rem;
+    line-height: 1.7;
+}
+
+.bullets li::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0.62em;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--orange);
+}
+
+.bullets strong {
+    color: var(--ink);
+    font-weight: 600;
+}
+
+/* tracked caps over one hairline — no box per tag */
+.tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem 1.25rem;
+    margin-top: 1.8rem;
+    padding-top: 1.15rem;
+    border-top: 1px solid var(--line);
+}
+
+.tag {
+    font-family: var(--display);
+    font-weight: 500;
+    font-size: 0.68rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+}
+
+/* older roles, condensed */
+.details {
+    margin-top: clamp(2.6rem, 4.6vw, 4rem);
+    border-top: 1px solid var(--line);
+}
+
+.details summary {
+    cursor: pointer;
+    padding: 1.1rem 0;
+    font-size: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+    list-style: none;
+    transition: color 0.18s;
+}
+
+.details summary::-webkit-details-marker {
+    display: none;
+}
+
+.details summary i {
+    color: var(--orange);
+    font-size: 0.72rem;
+    transition: rotate 0.22s var(--ease);
+}
+
+.details[open] summary i {
+    rotate: 90deg;
+}
+
+.details .mini {
+    display: grid;
+    gap: 1.7rem;
+    padding: 0.4rem 0 1.7rem;
+}
+
+.mini-row h4 {
+    font-size: 1rem;
+}
+
+.mini-row p {
+    color: var(--ink-2);
+    font-size: 0.97rem;
+    max-width: var(--measure);
+    margin-top: 0.4rem;
+}
+
+.mini-row a {
+    color: var(--ink);
+    border-bottom: 2px solid var(--orange);
+}
+
+.mini-row a:hover {
+    background: var(--sand-1);
+}
+
+/* ---------- Skills ---------------------------------------------------- */
+.grid-skills {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 270px), 1fr));
+    gap: clamp(2rem, 3.4vw, 3rem) clamp(1.75rem, 3vw, 3rem);
+}
+
+.skill-head {
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+    margin-bottom: 1.4rem;
+}
+
+/* A sand disc with an ink glyph in it — the circle motif at UI scale. Ink on
+   --sand-1 is 15.6:1. */
+.skill-head .ico {
+    width: 36px;
+    height: 36px;
+    flex: 0 0 auto;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    background: var(--sand-1);
+    color: var(--ink);
+    font-size: 0.88rem;
+    transition: background 0.25s var(--ease);
+}
+
+.card:hover .skill-head .ico {
+    background: var(--sand-2);
+}
+
+.skill-head h3 {
+    font-size: 1.06rem;
+}
+
+.pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 1.15rem;
+}
+
+.pill {
+    font-family: var(--display);
+    font-weight: 500;
+    font-size: 0.72rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-2);
+    transition: color 0.18s;
+}
+
+.pill:hover {
+    color: var(--ink);
+}
+
+/* ---------- Work / projects ------------------------------------------ */
+.grid-work {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 290px), 1fr));
+    gap: clamp(2.2rem, 3.8vw, 3.25rem) clamp(1.75rem, 3vw, 3rem);
+    counter-reset: work;
+}
+
+.work {
+    display: flex;
+    flex-direction: column;
+    counter-increment: work;
+}
+
+/* The deck's catalogue numbering: 001 002 003 in letterspaced caps beneath
+   each item. It is a CSS counter, so it renumbers itself if the markup ever
+   changes. */
+.work::after {
+    content: "0" counter(work, decimal-leading-zero);
+    margin-top: 1.4rem;
+    font-family: var(--display);
+    font-weight: 500;
+    font-size: 0.7rem;
+    letter-spacing: 0.3em;
+    color: var(--ink-3);
+    transition: color 0.18s;
+}
+
+.work:hover::after {
+    color: var(--orange);
+}
+
+.work.wide {
+    grid-column: span 2;
+}
+
+@media (max-width: 780px) {
+    .work.wide {
+        grid-column: span 1;
+    }
+}
+
+.work-kind {
+    font-family: var(--display);
+    font-weight: 500;
+    font-size: 0.7rem;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    margin-bottom: 0.9rem;
+}
+
+.work h3 {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.55rem;
+    font-size: 1.16rem;
+}
+
+.work h3 .go {
+    font-size: 0.7rem;
+    margin-top: 0.32em;
+    color: var(--ink-3);
+    transition: transform 0.25s var(--ease), color 0.18s;
+}
+
+.work:hover h3 .go {
+    transform: translate(3px, -3px);
+    color: var(--orange);
+}
+
+/* :not(.work-kind) is load-bearing. `.work p` is (0,1,1) and `.work-kind` is
+   (0,1,0), so without it the kind label loses its size, colour and bottom
+   margin to the body-copy rule and renders as 16px ink-2 tracked caps with
+   1.6rem under it. It did exactly that until it was measured. */
+.work p:not(.work-kind) {
+    color: var(--ink-2);
+    font-size: 1rem;
+    line-height: 1.68;
+    max-width: var(--measure);
+    margin-top: 0.85rem;
+    /* a MINIMUM gap above the tag rule; margin-top: auto below adds whatever
+       slack the card has on top of it, which bottom-aligns the tags across a
+       row of unequal cards without any of them looking cramped */
+    margin-bottom: 1.6rem;
+}
+
+.work .tags {
+    margin-top: auto;
+    padding-top: 1.15rem;
+}
+
+/* An outlined box — used HERE and essentially nowhere else, which is the only
+   way an outlined box stays interesting. Pill, ink text, orange glyph. */
+.badge-patent {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.55rem;
+    font-family: var(--display);
+    font-weight: 500;
+    font-size: 0.7rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    padding: 0.52rem 1.05rem;
+    border: 1px solid var(--line-strong);
+    border-radius: 999px;
+    color: var(--ink);
+}
+
+.badge-patent i {
+    color: var(--orange);
+}
+
+/* Same trap as .work p: .badge-patent is also a <p> and a direct child here, so
+   an id-qualified descendant selector would strip it back to body copy. */
+#research .card > p:not(.badge-patent) {
+    font-size: 1.02rem;
+    line-height: 1.7;
+    max-width: var(--measure);
+}
+
+/* publications */
+.pubs {
+    display: grid;
+    gap: clamp(2rem, 3.4vw, 2.75rem);
+    margin-top: clamp(2.4rem, 4.2vw, 3.5rem);
+}
+
+.pub {
+    display: flex;
+    gap: 1.1rem;
+    align-items: flex-start;
+    padding-top: 1.4rem;
+    border-top: 1px solid var(--line);
+}
+
+.pub i {
+    color: var(--orange);
+    margin-top: 0.4rem;
+    font-size: 0.88rem;
+}
+
+.pub h4 {
+    font-size: 1.04rem;
+    line-height: 1.45;
+}
+
+.pub h4 a {
+    border-bottom: 2px solid transparent;
+    transition: border-color 0.18s;
+}
+
+.pub h4 a:hover {
+    border-bottom-color: var(--orange);
+}
+
+.pub p {
+    color: var(--ink-2);
+    font-size: 0.97rem;
+    max-width: var(--measure);
+    margin-top: 0.5rem;
+}
+
+/* ---------- Education ------------------------------------------------ */
+.grid-2 {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+    gap: clamp(2.2rem, 3.8vw, 3.25rem) clamp(1.75rem, 3vw, 3rem);
+}
+
+.edu-gpa {
+    font-family: var(--display);
+    font-weight: 500;
+    font-size: 1.9rem;
+    line-height: 1.1;
+    color: var(--ink);
+    margin-top: 0.5rem;
+}
+
+.edu-courses {
+    color: var(--ink-3);
+    font-size: 0.95rem;
+    margin-top: 1.15rem;
+    padding-top: 1.15rem;
+    border-top: 1px solid var(--line);
+}
+
+/* ---------- Offline / fun -------------------------------------------- */
+.grid-fun {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 265px), 1fr));
+    gap: clamp(2.2rem, 3.8vw, 3.25rem) clamp(1.75rem, 3vw, 3rem);
+}
+
+.fun .emoji {
+    font-size: 1.4rem;
+    line-height: 1;
+    margin-bottom: 0.95rem;
+    display: inline-block;
+    transition: transform 0.3s var(--ease);
+}
+
+.fun:hover .emoji {
+    transform: rotate(-10deg) scale(1.16);
+}
+
+.fun p {
+    color: var(--ink-2);
+    font-size: 0.98rem;
+    line-height: 1.68;
+    max-width: var(--measure);
+    margin-top: 0.6rem;
+}
+
+/* ---------- Contact -------------------------------------------------- */
+#contact .sec-sub {
+    margin-inline: 0;
+}
+
+.mailto {
+    display: inline-block;
+    font-family: var(--display);
+    font-weight: 500;
+    font-size: clamp(1.45rem, 5.2vw, 2.9rem);
+    letter-spacing: 0.004em;
+    line-height: 1.14;
+    margin-top: 1.9rem;
+    padding-bottom: 0.12em;
+    color: var(--ink);
+    border-bottom: 3px solid var(--orange);
+    transition: background 0.2s, color 0.2s;
+}
+
+.mailto:hover {
+    background: var(--sand-1);
+}
+
+.contact-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem 1.8rem;
+    margin-top: 2.1rem;
+    font-family: var(--display);
+    font-weight: 500;
+    font-size: 0.72rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+}
+
+.contact-meta i {
+    color: var(--orange);
+    margin-right: 0.2rem;
+}
+
+#contact .socials {
+    margin-top: 2.1rem;
+}
+
+/* ---------- Footer --------------------------------------------------- */
+footer {
+    padding: 2rem 0 2.5rem;
+    border-top: 1px solid var(--line);
+}
+
+footer .wrap {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem 1.6rem;
+    align-items: baseline;
+    justify-content: space-between;
+    color: var(--ink-3);
+    font-size: 0.9rem;
+}
+
+/* back to top — a circle, hairline, ink on hover */
+.to-top {
+    position: fixed;
+    right: var(--gutter);
+    bottom: var(--gutter);
+    width: 44px;
+    height: 44px;
+    display: grid;
+    place-items: center;
+    z-index: 70;
+    border-radius: 50%;
+    border: 1px solid var(--line-strong);
+    background: var(--paper);
+    color: var(--ink);
+    font-size: 0.82rem;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(14px);
+    transition: opacity 0.22s, transform 0.22s var(--ease), visibility 0.22s, background 0.18s, color 0.18s,
+        border-color 0.18s;
+}
+
+.to-top.show {
+    opacity: 1;
+    visibility: visible;
+    transform: none;
+}
+
+.to-top:hover {
+    background: var(--ink);
+    border-color: var(--ink);
+    color: var(--paper);
+}
+
+/* ==========================================================================
+   Decorative layer — the per-section geometry
+   ==========================================================================
+   The shapes themselves are defined once, up in "Layout". All that is left per
+   section is where the circle sits and how big it is. The composition rules,
+   learned the hard way:
+
+     ONE DISC PER SECTION, centred at 50% of the section's height. A disc placed
+     near a section's top or bottom gets sliced by `overflow: hidden`, and that
+     flat cut is what makes it read as a smudge instead of a circle. The radius
+     is always under half the section's height, and the sides alternate down the
+     page so the eye is led left, right, left rather than down a stripe.
+
+     RINGS ARE CONCENTRIC WITH THEIR DISC, or absent. Nothing crosses the
+     measure at any width.
+
+     EVERY RADIUS IS CHECKED AGAINST THE SECTION'S SHORTEST MEASURED HEIGHT
+     (taken at 950, 1100, 1280, 1440 and 1920, since sections are shortest just
+     above the phone breakpoint, not at the widest window). A ring that exceeds
+     half the section height does not get "cropped" — it stops dead in mid-air,
+     which is the single thing that made the first pass look accidental. The
+     shortest heights are in the comments so the next radius change can be
+     checked without re-measuring:
+       hero 700 · about 745 · experience 2961 · skills 786
+       work 2381 · research 826 · education 543 · beyond 851 · contact 524
+
+     TWO ORANGE EDGE BLOCKS on the whole page — the only rectangles in the
+     file — and three loose dots (two in the hero, one closing the contact
+     block). That is the entire decorative punctuation budget; the eyebrow and
+     bullet dots carry the rest of it inside the content layer.
+   ========================================================================== */
+
+/* 01 · about — right, with its ring. 745 tall at its shortest, so 372 is the
+   ceiling. */
+#about::before {
+    --disc-r: 245px;
+    --ring-r: 355px;
+}
+
+/* 02 · experience — left, no ring (the section is 3000px tall; a second circle
+   in it would just be noise), plus the FIRST of the two orange edge blocks */
+#experience::before {
+    --disc-x: -60px;
+    --disc-r: 210px;
+    background-image: linear-gradient(var(--orange), var(--orange)),
+        radial-gradient(circle var(--disc-r) at var(--disc-x) 50%, var(--disc-f) var(--disc-r), transparent var(--disc-r));
+    background-size: 44px 84px, auto;
+    background-position: -8px 3.25rem, 0 0;
+}
+
+/* 03 · skills — left, with its ring. 786 at its shortest → 393 ceiling. */
+#skills::before {
+    --disc-x: -110px;
+    --disc-r: 225px;
+    --ring-r: 330px;
+}
+
+/* 04 · work — the largest circle on the page, right, with its ring. The section
+   is 2381px tall at its shortest, so this one has room to be the anchor. */
+#work::before {
+    --disc-x: calc(100% + 90px);
+    --disc-r: 330px;
+    --ring-r: 470px;
+}
+
+/* 05 · research — left, and the one place the deeper tint is used at size */
+#research::before {
+    --disc-x: -70px;
+    --disc-r: 190px;
+    --disc-f: var(--sand-2);
+}
+
+/* 06 · education — 543 at its shortest → 271 ceiling, so a small circle */
+#education::before {
+    --disc-x: calc(100% + 55px);
+    --disc-r: 200px;
+}
+
+/* 07 · beyond — deliberately the quietest section on the page. 851 → 425. */
+#beyond::before {
+    --disc-x: -90px;
+    --disc-r: 250px;
+}
+
+/* 08 · contact — the closing circle, the SECOND and last orange edge block
+   (dropped to 62% so it does not collide with the folio), and the navy dot that
+   ends the page. Only 524 tall at its shortest, so there is no room for a ring
+   here — 262px is the whole budget and the disc uses most of it. */
+#contact::before {
+    --disc-x: calc(100% + 30px);
+    --disc-r: 205px;
+    background-image: linear-gradient(var(--orange), var(--orange)),
+        radial-gradient(circle 4px at 2% 86%, var(--navy) 4px, transparent 4px),
+        radial-gradient(circle var(--disc-r) at var(--disc-x) 50%, var(--disc-f) var(--disc-r), transparent var(--disc-r));
+    background-size: 40px 92px, auto, auto;
+    background-position: calc(100% + 8px) 62%, 0 0, 0 0;
+}
+
+/* NARROW SCREENS. This is the fix that matters: at 390px the desktop radii
+   swallow the whole text column, and a paragraph set on a tint with a curved
+   edge cutting through it looks like a mistake even when the contrast is 15:1.
+   The composition is kept and the radii are cut, so every circle shows as a
+   ~60px crescent in the margin — the same language, at phone scale. Both sides
+   still alternate down the page. */
+@media (max-width: 900px) {
+    section[id]::before,
+    .hero::before {
+        --disc-r: 120px;
+        --ring-r: 2px;
+        /* 36px of the deeper tint reads better at the edge than 60px of the
+           pale one, and it keeps the crescent clear of the longest line */
+        --disc-f: var(--sand-2);
+    }
+
+    #about::before,
+    #work::before,
+    #education::before,
+    #contact::before,
+    .hero::before {
+        --disc-x: calc(100% + 84px);
+    }
+
+    #experience::before,
+    #skills::before,
+    #research::before,
+    #beyond::before {
+        --disc-x: -84px;
+    }
+
+    /* the hero's dots move to the very edge, where the deck puts them, instead
+       of landing on top of a line of body copy */
+    .hero-inner::before {
+        background-image: radial-gradient(circle 5px at calc(100% - 2px) 15%, var(--orange) 5px, transparent 5px),
+            radial-gradient(circle 4px at 0 84%, var(--navy) 4px, transparent 4px);
+    }
+}
+
+/* ---------- Reveal on scroll ----------------------------------------- */
+/* scripts.js adds .in and sets a per-sibling transitionDelay, so the stagger
+   is already orchestrated — this only has to describe the two states. */
+.reveal {
+    opacity: 0;
+    transform: translateY(16px);
+    transition: opacity 0.7s var(--ease), transform 0.7s var(--ease);
+}
+
+.reveal.in {
+    opacity: 1;
+    transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    html {
+        scroll-behavior: auto;
+    }
+
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        /* the delay matters as much as the duration: without this, a staggered
+           entrance becomes a staggered half-second of blank space */
+        animation-delay: 0s !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+
+    .reveal {
+        opacity: 1;
+        transform: none;
+    }
+}
+
+/* ---------- Print ---------------------------------------------------- */
+@media print {
+    .nav,
+    .to-top,
+    #progress,
+    .field,
+    .glyphs,
+    .grain,
+    .scroll-hint,
+    .rule {
+        display: none !important;
+    }
+
+    /* the whole decorative layer, the grain, and the folio */
+    body::before,
+    .hero::before,
+    .hero-inner::before,
+    section[id]::before,
+    section[id]::after {
+        display: none !important;
+    }
+
+    html,
+    body,
+    .card,
+    .details,
+    .pub {
+        background: #fff !important;
+        color: #000 !important;
+    }
+
+    .h-xl,
+    .grad-text,
+    .mailto,
+    .stat b,
+    h2,
+    h3,
+    h4 {
+        color: #000 !important;
+        -webkit-text-fill-color: #000;
+    }
+
+    .grad-text {
+        background-image: none !important;
+    }
+
+    .mailto {
+        border-bottom-color: #000;
+    }
+
+    section[id] {
+        padding-block: 1.5rem;
+        overflow: visible;
+    }
+
+    .reveal {
+        opacity: 1 !important;
+        transform: none !important;
+    }
+}
+
+/* ==========================================================================
+   Motion layer
+   Appended polish only. Everything below animates transform, opacity or
+   colour exclusively — nothing here touches layout in a scroll or pointer
+   loop, and the reduced-motion block above switches the ambient work off.
+   ========================================================================== */
+
+/* scripts.js still adds .is-tilt and sets --rx / --ry per frame, so it needs
+   no change. The 3D rotation went with the old direction; on a quiet page the
+   card answers the pointer by lifting a couple of pixels and warming its
+   hairline instead. */
+@media (hover: hover) and (pointer: fine) {
+    .card.is-tilt {
+        transform: translateY(-3px);
+        border-top-color: var(--orange);
+    }
+}
+
+/* ---------- Press states (matter most on touch) ---------------------- */
+.btn:active,
+.nav-cta:active,
+.mailto:active,
+.socials a:active,
+.burger:active,
+.toggle:active,
+.details summary:active,
+.to-top:active {
+    transform: scale(0.96);
+}
+
+/* ---------- Touch target sizing -------------------------------------- */
+@media (pointer: coarse) {
+    .toggle,
+    .burger {
+        width: 44px;
+        height: 44px;
+    }
+
+    .socials a {
+        width: 44px;
+        height: 44px;
+    }
+
+    .to-top {
+        width: 48px;
+        height: 48px;
+    }
+}
+
+@media (pointer: coarse) and (max-width: 900px) {
+    .nav-links a {
+        display: flex;
+        align-items: center;
+        min-height: 44px;
+    }
+}
+
+/* ---------- Easter egg: inversion wipe ------------------------------- */
+/* A sand disc that blooms out of the middle of the page and fades. Circles,
+   even here. */
+.flare {
+    position: fixed;
+    inset: 0;
+    z-index: 95;
+    pointer-events: none;
+    opacity: 0;
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+}
+
+.flare::before {
+    content: "";
+    width: 150vmax;
+    height: 150vmax;
+    border-radius: 50%;
+    background: var(--sand-1);
+}
+
+.flare.go {
+    animation: flare-bloom 0.7s var(--ease) forwards;
+}
+
+@keyframes flare-bloom {
+    0% {
+        opacity: 0;
+        transform: scale(0.2);
+    }
+    40% {
+        opacity: 1;
+        transform: scale(1);
+    }
+    100% {
+        opacity: 0;
+        transform: scale(1.15);
+    }
+}
+
+/* ---------- Easter egg: toast --------------------------------------- */
+.toast {
+    position: fixed;
+    left: var(--gutter);
+    bottom: calc(var(--gutter) + 0.25rem);
+    z-index: 100;
+    max-width: min(70vw, 20rem);
+    padding: 0.68rem 1.2rem;
+    font-family: var(--display);
+    font-weight: 500;
+    font-size: 0.7rem;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    border-radius: 999px;
+    background: var(--ink);
+    color: var(--paper);
+    pointer-events: none;
+    opacity: 0;
+    transform: translateY(10px);
+    transition: opacity 0.22s var(--ease), transform 0.28s var(--ease);
+}
+
+.toast.show {
+    opacity: 1;
+    transform: none;
+}
+
+/* ---------- Reduced motion ------------------------------------------ */
+@media (prefers-reduced-motion: reduce) {
+    .flare {
+        display: none;
+    }
+}
